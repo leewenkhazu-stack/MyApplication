@@ -5,9 +5,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
+import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
@@ -29,13 +31,24 @@ class AuthViewModel(
 
     // Firebase auth state listener
     private val authStateListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
-        val user = firebaseAuth.currentUser
-        if (user == null) {
-            // User signed out, reset all loading states
-            resetAllStates()
-        } else {
-            // User signed in, reset loading states
-            resetLoadingStates()
+        viewModelScope.launch {
+            _uiState.update { currentState ->
+                val user = firebaseAuth.currentUser
+                if (user == null) {
+                    // User signed out, reset all loading states
+                    currentState.copy(
+                        isLoading = false,
+                        isGoogleSignInLoading = false,
+                        errorMessage = null
+                    )
+                } else {
+                    // User signed in, reset loading states
+                    currentState.copy(
+                        isLoading = false,
+                        isGoogleSignInLoading = false
+                    )
+                }
+            }
         }
     }
 
@@ -114,17 +127,6 @@ class AuthViewModel(
     }
 
     /**
-     * Resets only loading states (used when user signs in successfully)
-     */
-    private fun resetLoadingStates() {
-        _uiState.value = _uiState.value.copy(
-            isLoading = false,
-            isGoogleSignInLoading = false
-        )
-        Log.d(TAG, "Loading states reset after successful sign-in")
-    }
-
-    /**
      * Validates form inputs without logging sensitive data
      */
     private fun isFormValid(email: String, password: String): Boolean {
@@ -173,17 +175,29 @@ class AuthViewModel(
                     errorMessage = mapFirebaseError(e),
                     isLoading = false
                 )
-                // Clear password from memory after failed authentication
-                clearPasswordFromMemory()
+                // keep password on error to allow user correction
             } catch (e: Exception) {
                 Log.e(TAG, "Unexpected authentication error: ${e.javaClass.simpleName}")
                 _uiState.value = _uiState.value.copy(
                     errorMessage = "An unexpected error occurred. Please try again.",
                     isLoading = false
                 )
-                // Clear password from memory after failed authentication
-                clearPasswordFromMemory()
+                // keep password on error to allow user correction
             }
+        }
+    }
+
+    private fun extractNonceFromJWT(idToken: String): String? {
+        return try {
+            val parts = idToken.split('.')
+            if (parts.size < 2) return null
+            val payload = parts[1]
+            val decodedBytes = android.util.Base64.decode(payload, android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP)
+            val json = String(decodedBytes)
+            org.json.JSONObject(json).optString("nonce")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to extract nonce: ${e.message}")
+            null
         }
     }
 
@@ -192,31 +206,50 @@ class AuthViewModel(
      */
     private fun signInWithGoogle() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                isGoogleSignInLoading = true,
-                errorMessage = null
-            )
+            val nonce = googleSignInManager.createNonce()
+            // store nonce in state so it survives configuration changes
+            _uiState.update { it.copy(pendingNonce = nonce, isGoogleSignInLoading = true, errorMessage = null) }
 
             try {
-                val result = googleSignInManager.signInWithGoogleButton()
+                val result = googleSignInManager.requestGoogleIdToken(nonce)
 
                 if (result.isSuccess) {
-                    Log.d(TAG, "Google Sign-In successful")
-                    // Loading state will be reset by Firebase auth state listener
+                    val idToken = result.getOrNull()
+                    if (idToken.isNullOrBlank()) {
+                        _uiState.update { it.copy(errorMessage = "Google Sign-In returned invalid token", isGoogleSignInLoading = false, pendingNonce = null) }
+                        return@launch
+                    }
+
+                    // Verify nonce from token
+                    val tokenNonce = extractNonceFromJWT(idToken)
+                    val expectedNonce = _uiState.value.pendingNonce
+                    if (tokenNonce == null || tokenNonce != expectedNonce) {
+                        Log.e(TAG, "Nonce verification failed")
+                        _uiState.update { it.copy(errorMessage = "Security validation failed", isGoogleSignInLoading = false, pendingNonce = null) }
+                        return@launch
+                    }
+
+                    // Proceed to sign in with Firebase using the ID token
+                    try {
+                        val firebaseCredential = GoogleAuthProvider.getCredential(idToken, null)
+                        auth.signInWithCredential(firebaseCredential).await()
+                        Log.d(TAG, "Firebase sign-in with Google successful")
+                        // clear pending nonce
+                        _uiState.update { it.copy(pendingNonce = null) }
+                        // loading state will be cleared by auth listener
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Firebase authentication failed: ${e.javaClass.simpleName}")
+                        _uiState.update { it.copy(errorMessage = "Authentication failed", isGoogleSignInLoading = false, pendingNonce = null) }
+                    }
+
                 } else {
                     val error = result.exceptionOrNull()
                     Log.e(TAG, "Google Sign-In failed: ${error?.javaClass?.simpleName}")
-                    _uiState.value = _uiState.value.copy(
-                        errorMessage = "Google Sign-In failed. Please try again.",
-                        isGoogleSignInLoading = false
-                    )
+                    _uiState.update { it.copy(errorMessage = "Google Sign-In failed. Please try again.", isGoogleSignInLoading = false, pendingNonce = null) }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Google Sign-In error: ${e.javaClass.simpleName}")
-                _uiState.value = _uiState.value.copy(
-                    errorMessage = "Google Sign-In failed. Please try again.",
-                    isGoogleSignInLoading = false
-                )
+                _uiState.update { it.copy(errorMessage = "Google Sign-In failed. Please try again.", isGoogleSignInLoading = false, pendingNonce = null) }
             }
         }
     }

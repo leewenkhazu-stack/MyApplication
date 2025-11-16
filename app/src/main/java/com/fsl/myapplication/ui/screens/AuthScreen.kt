@@ -8,10 +8,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fsl.myapplication.auth.*
@@ -31,7 +29,9 @@ fun AuthScreen() {
     var isPasswordVisible by remember { mutableStateOf(false) }
 
     // Keyboard and animation management
-    val (keyboardOffset, dismissKeyboard) = useKeyboardHandling()
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     val (premiumSpring, subtleSpring) = useAnimationSpecs()
     val (emailButtonInteraction, googleButtonInteraction, toggleButtonInteraction) = useInteractionSources()
     val (emailButtonScale, googleButtonScale, toggleButtonScale) = useButtonAnimations(
@@ -43,12 +43,21 @@ fun AuthScreen() {
         toggleButtonPressed = toggleButtonInteraction.collectIsPressedAsState().value
     )
 
+    // Helper function to dismiss keyboard
+    val dismissKeyboard = remember {
+        {
+            focusManager.clearFocus()
+            keyboardController?.hide()
+            Unit
+        }
+    }
+
     // Main content
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .imePadding()
             .padding(16.dp)
-            .offset(y = -keyboardOffset)
             .clickable(
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() }
@@ -136,41 +145,6 @@ fun AuthScreen() {
 }
 
 /**
- * Keyboard handling hook - manages IME visibility and animated offset
- * Returns: Pair of (keyboardOffset, dismissKeyboard lambda)
- */
-@Composable
-private fun useKeyboardHandling(): Pair<Dp, () -> Unit> {
-    val focusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
-    val density = LocalDensity.current
-
-    val imeInsets = WindowInsets.ime
-    val imeBottomPx = imeInsets.getBottom(density)
-    val imeVisible = imeBottomPx > 0
-    val imeHeightDp = with(density) { imeBottomPx.toDp() }
-
-    val keyboardOffset by animateDpAsState(
-        targetValue = if (imeVisible) imeHeightDp * 0.35f else 0.dp,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "keyboardOffset"
-    )
-
-    val dismissKeyboard = remember {
-        {
-            focusManager.clearFocus()
-            keyboardController?.hide()
-            Unit
-        }
-    }
-
-    return Pair(keyboardOffset, dismissKeyboard)
-}
-
-/**
  * Animation specs hook - memorizes spring animation specs
  * Returns: Pair of (premiumSpring, subtleSpring)
  */
@@ -197,10 +171,10 @@ private fun useAnimationSpecs(): Pair<SpringSpec<Float>, SpringSpec<Float>> {
  */
 @Composable
 private fun useInteractionSources(): Triple<
-    MutableInteractionSource,
-    MutableInteractionSource,
-    MutableInteractionSource
-> {
+        MutableInteractionSource,
+        MutableInteractionSource,
+        MutableInteractionSource
+        > {
     val emailButtonInteraction = remember { MutableInteractionSource() }
     val googleButtonInteraction = remember { MutableInteractionSource() }
     val toggleButtonInteraction = remember { MutableInteractionSource() }
@@ -222,8 +196,8 @@ private fun useButtonAnimations(
 ): Triple<Float, Float, Float> {
     val emailButtonScale by animateFloatAsState(
         targetValue = when {
-            uiState.isLoading -> 0.96f
-            emailButtonPressed -> 0.94f
+            uiState.isLoading -> 0.98f
+            emailButtonPressed -> 0.97f
             else -> 1f
         },
         animationSpec = premiumSpring,
@@ -232,8 +206,8 @@ private fun useButtonAnimations(
 
     val googleButtonScale by animateFloatAsState(
         targetValue = when {
-            uiState.isGoogleSignInLoading -> 0.96f
-            googleButtonPressed -> 0.94f
+            uiState.isGoogleSignInLoading -> 0.98f
+            googleButtonPressed -> 0.97f
             else -> 1f
         },
         animationSpec = premiumSpring,

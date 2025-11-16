@@ -10,7 +10,9 @@ data class AuthUiState(
     val isGoogleSignInLoading: Boolean = false,
     val isSignUp: Boolean = false,
     val errorMessage: String? = null,
-    val isFormValid: Boolean = false
+    val isFormValid: Boolean = false,
+    // Pending nonce stored in ViewModel state so it survives configuration changes
+    val pendingNonce: String? = null
 ) {
     companion object {
         fun initial() = AuthUiState()
@@ -29,12 +31,4 @@ sealed class AuthAction {
     object ClearError : AuthAction()
     object ClearForm : AuthAction()
     object ResetState : AuthAction() // Added for proper sign-out handling
-}
-
-/**
- * Represents authentication results
- */
-sealed class AuthResult {
-    object Success : AuthResult()
-    data class Error(val message: String) : AuthResult()
 }

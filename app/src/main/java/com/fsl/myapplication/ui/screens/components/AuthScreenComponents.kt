@@ -6,31 +6,35 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.ripple
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fsl.myapplication.R
 
 /**
@@ -45,7 +49,7 @@ fun AuthTitle(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(72.dp),
+            .height(80.dp),
         contentAlignment = Alignment.Center
     ) {
         AnimatedContent(
@@ -81,8 +85,7 @@ fun AuthTitle(
         ) { targetIsSignUp ->
             Text(
                 text = if (targetIsSignUp) "Create Account" else "Sign in",
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineMedium,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.semantics {
                     contentDescription =
@@ -104,39 +107,58 @@ fun EmailInputField(
     isEnabled: Boolean,
     modifier: Modifier = Modifier
 ) {
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(
-            animationSpec = tween(500, delayMillis = 100, easing = FastOutSlowInEasing)
-        ) + slideInVertically(
-            animationSpec = tween(500, delayMillis = 100, easing = CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f))
-        ) { it / 4 },
-        label = "emailFieldAnimation"
-    ) {
-        val focusManager = LocalFocusManager.current
+    val focusManager = LocalFocusManager.current
 
-        OutlinedTextField(
-            value = email,
-            onValueChange = onEmailChange,
-            label = { Text("Email", fontSize = 16.sp) },
-            modifier = modifier
-                .fillMaxWidth()
-                .semantics {
-                    contentDescription = "Email input field"
-                },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Email,
-                imeAction = ImeAction.Next
-            ),
-            keyboardActions = KeyboardActions(
-                onNext = { focusManager.moveFocus(FocusDirection.Down) }
-            ),
-            singleLine = true,
-            textStyle = LocalTextStyle.current.copy(fontSize = 16.sp),
-            enabled = isEnabled
+    OutlinedTextField(
+        value = email,
+        onValueChange = onEmailChange,
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics { contentDescription = "Email input field" },
+        enabled = isEnabled,
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyLarge,
+
+        // Floating label
+        label = {
+            Text(
+                text = "Email Address",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        },
+
+        // Placeholder
+        placeholder = {
+            Text(
+                text = "Enter your email",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+            )
+        },
+
+        // Leading icon (same family as visibility)
+        leadingIcon = {
+            Icon(
+                imageVector = Icons.Filled.Email,
+                contentDescription = "Email icon",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.60f),
+                modifier = Modifier.size(22.dp)
+            )
+        },
+
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Email,
+            imeAction = ImeAction.Next
+        ),
+
+        keyboardActions = KeyboardActions(
+            onNext = { focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down) }
         )
-    }
+    )
 }
+
+
+
 
 /**
  * Password input field with show/hide toggle
@@ -152,52 +174,117 @@ fun PasswordInputField(
     modifier: Modifier = Modifier,
     onDoneAction: (() -> Unit)? = null
 ) {
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(
-            animationSpec = tween(500, delayMillis = 200, easing = FastOutSlowInEasing)
-        ) + slideInVertically(
-            animationSpec = tween(500, delayMillis = 200, easing = CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f))
-        ) { it / 4 },
-        label = "passwordFieldAnimation"
-    ) {
-        OutlinedTextField(
-            value = password,
-            onValueChange = onPasswordChange,
-            label = { Text("Password", fontSize = 16.sp) },
-            modifier = modifier
-                .fillMaxWidth()
-                .semantics {
-                    contentDescription = "Password input field"
-                },
-            visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Password,
-                imeAction = ImeAction.Done
-            ),
-            keyboardActions = KeyboardActions(
-                onDone = { onDoneAction?.invoke() }
-            ),
-            trailingIcon = {
-                IconButton(
-                    onClick = { onPasswordVisibilityToggle(!isPasswordVisible) }
+    var isFocused by remember { mutableStateOf(false) }
+
+    // Track visibility icon hover/press state
+    val visibilityInteraction = remember { MutableInteractionSource() }
+    val isPressed = visibilityInteraction.collectIsPressedAsState().value
+    val isHovered = visibilityInteraction.collectIsHoveredAsState().value
+
+    // Alpha overlay animation (same style as your buttons)
+    val iconOverlayAlpha by animateFloatAsState(
+        targetValue = when {
+            isPressed -> 0.22f
+            isHovered -> 0.12f
+            else -> 0f
+        },
+        animationSpec = tween(durationMillis = 120),
+        label = "visibilityIconAlpha"
+    )
+
+    // NEW Material3 ripple (no deprecation)
+    val rippleIndication = ripple(
+        bounded = false,
+        radius = 40.dp, // slightly larger → feels longer
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.20f)
+    )
+
+    OutlinedTextField(
+        value = password,
+        onValueChange = onPasswordChange,
+        modifier = modifier
+            .fillMaxWidth()
+            .onFocusChanged { isFocused = it.isFocused }
+            .semantics { contentDescription = "Password input field" },
+
+        enabled = isEnabled,
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyLarge,
+
+        // Floating label
+        label = {
+            Text(
+                text = "Password",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        },
+
+        // Placeholder
+        placeholder = {
+            Text(
+                text = "Enter your password",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+            )
+        },
+
+        // Leading lock icon
+        leadingIcon = {
+            Icon(
+                imageVector = Icons.Filled.Lock,
+                contentDescription = "Password icon",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.60f),
+                modifier = Modifier.size(22.dp)
+            )
+        },
+
+        visualTransformation =
+            if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Password,
+            imeAction = ImeAction.Done
+        ),
+
+        keyboardActions = KeyboardActions(
+            onDone = { onDoneAction?.invoke() }
+        ),
+
+        trailingIcon = {
+            if (isFocused || password.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp) // larger hit area for better UX
+                        .clickable(
+                            interactionSource = visibilityInteraction,
+                            indication = rippleIndication
+                        ) {
+                            onPasswordVisibilityToggle(!isPasswordVisible)
+                        },
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = if (isPasswordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                        contentDescription = if (isPasswordVisible) "Hide password" else "Show password"
+                        contentDescription = if (isPasswordVisible) "Hide password" else "Show password",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.60f),
+                        modifier = Modifier
+                            .size(22.dp)
+                            .alpha(1f - iconOverlayAlpha) // hover/press fade
                     )
                 }
-            },
-            singleLine = true,
-            textStyle = LocalTextStyle.current.copy(fontSize = 16.sp),
-            enabled = isEnabled
-        )
-    }
+            }
+        }
+    )
 }
+
+
 
 /**
  * Email sign-in/up button with animated loading state
  * Single responsibility: render authentication button with loading indicator
+ *
+ * MODIFIED: Removed AnimatedContent inside buttons (performance fix)
+ * + ADDED ultra-smooth scale + alpha animation (minimal)
  */
 @Composable
 fun AuthenticationButton(
@@ -209,12 +296,34 @@ fun AuthenticationButton(
     interactionSource: MutableInteractionSource,
     modifier: Modifier = Modifier
 ) {
+    val isPressed = interactionSource.collectIsPressedAsState().value
+    val isHovered = interactionSource.collectIsHoveredAsState().value
+
+    val smoothScale by animateFloatAsState(
+        targetValue = buttonScale,
+        animationSpec = spring(
+            dampingRatio = 1.0f,
+            stiffness = 800f
+        ),
+        label = "smoothButtonScale"
+    )
+
+    val overlayAlpha by animateFloatAsState(
+        targetValue = when {
+            isPressed -> 0.22f
+            isHovered -> 0.12f
+            else -> 0f
+        },
+        animationSpec = tween(120),
+        label = "overlayAlpha"
+    )
+
     Button(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
             .height(56.dp)
-            .scale(buttonScale)
+            .scale(smoothScale)
             .semantics {
                 contentDescription =
                     if (isSignUp) "Create account button" else "Sign in button"
@@ -223,51 +332,44 @@ fun AuthenticationButton(
         interactionSource = interactionSource,
         border = BorderStroke(
             1.dp,
-            if (isEnabled) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.outline
+            if (isEnabled)
+                MaterialTheme.colorScheme.primary
+            else
+                Color(0xFFDADCE0)
         ),
         colors = ButtonDefaults.buttonColors(
-            contentColor = Color.White,
-            disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-            containerColor = MaterialTheme.colorScheme.primary
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = Color.White
         )
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(24.dp),
+                .height(24.dp)
+                .alpha(
+                    if (!isEnabled) 0.88f
+                    else 1f - overlayAlpha
+                ),
             contentAlignment = Alignment.Center
         ) {
-            AnimatedContent(
-                targetState = isLoading,
-                transitionSpec = {
-                    fadeIn(animationSpec = tween(250, easing = FastOutSlowInEasing)) +
-                            scaleIn(initialScale = 0.92f, animationSpec = tween(250, easing = FastOutSlowInEasing)) togetherWith
-                            fadeOut(animationSpec = tween(150, easing = FastOutSlowInEasing)) +
-                            scaleOut(targetScale = 0.92f, animationSpec = tween(150, easing = FastOutSlowInEasing))
-                },
-                label = "emailButtonContent"
-            ) { loading ->
-                if (loading) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Loading...", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    }
-                } else {
-                    Text(
-                        text = if (isSignUp) "Sign up" else "Sign in",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
+            if (isLoading) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        strokeWidth = 2.dp
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Signing you in...", style = MaterialTheme.typography.labelLarge)
                 }
+            } else {
+                Text(
+                    text = if (isSignUp) "Sign up" else "Sign in",
+                    style = MaterialTheme.typography.labelLarge
+                )
             }
         }
     }
@@ -276,6 +378,9 @@ fun AuthenticationButton(
 /**
  * Google sign-in button with animated loading state
  * Single responsibility: render Google authentication button
+ *
+ * MODIFIED: Removed AnimatedContent inside buttons (performance fix)
+ * + ADDED ultra-smooth scale + alpha animation (minimal)
  */
 @Composable
 fun GoogleSignInButton(
@@ -286,12 +391,34 @@ fun GoogleSignInButton(
     interactionSource: MutableInteractionSource,
     modifier: Modifier = Modifier
 ) {
+    val isPressed = interactionSource.collectIsPressedAsState().value
+    val isHovered = interactionSource.collectIsHoveredAsState().value
+
+    val smoothScale by animateFloatAsState(
+        targetValue = buttonScale,
+        animationSpec = spring(
+            dampingRatio = 1.0f,
+            stiffness = 800f
+        ),
+        label = "smoothButtonScale"
+    )
+
+    val overlayAlpha by animateFloatAsState(
+        targetValue = when {
+            isPressed -> 0.22f
+            isHovered -> 0.12f
+            else -> 0f
+        },
+        animationSpec = tween(120),
+        label = "overlayAlphaGoogle"
+    )
+
     Button(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
             .height(56.dp)
-            .scale(buttonScale)
+            .scale(smoothScale)
             .semantics {
                 contentDescription = "Continue with Google button"
             },
@@ -302,55 +429,44 @@ fun GoogleSignInButton(
         ),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
         interactionSource = interactionSource,
-        border = BorderStroke(1.dp, Color(0xFFDADCE0))
+        border = BorderStroke(1.dp, Color(0xFFDADCE0)),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(24.dp),
+                .height(24.dp)
+                .alpha(1f - overlayAlpha),
             contentAlignment = Alignment.Center
         ) {
-            AnimatedContent(
-                targetState = isLoading,
-                transitionSpec = {
-                    fadeIn(animationSpec = tween(250, easing = FastOutSlowInEasing)) +
-                            scaleIn(initialScale = 0.92f, animationSpec = tween(250, easing = FastOutSlowInEasing)) togetherWith
-                            fadeOut(animationSpec = tween(150, easing = FastOutSlowInEasing)) +
-                            scaleOut(targetScale = 0.92f, animationSpec = tween(150, easing = FastOutSlowInEasing))
-                },
-                label = "googleButtonContent"
-            ) { loading ->
-                if (loading) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Signing in...", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    }
-                } else {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.google_logo),
-                            contentDescription = "Google logo",
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "Continue with Google",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            textAlign = TextAlign.Center
-                        )
-                    }
+            if (isLoading) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Signing in with Google...", style = MaterialTheme.typography.labelLarge)
+                }
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.google_logo),
+                        contentDescription = "Google logo",
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "Continue with Google",
+                        style = MaterialTheme.typography.labelLarge,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
         }
@@ -358,44 +474,31 @@ fun GoogleSignInButton(
 }
 
 /**
- * Animated divider with centered "or" text
- * Single responsibility: render separator between authentication methods
+ * Divider between auth methods
+ * Single responsibility: render horizontal divider with "or"
  */
 @Composable
 fun AuthMethodDivider(modifier: Modifier = Modifier) {
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(
-            animationSpec = tween(600, delayMillis = 300, easing = FastOutSlowInEasing)
-        ) + expandHorizontally(
-            animationSpec = tween(
-                600,
-                delayMillis = 300,
-                easing = CubicBezierEasing(0.4f, 0.0f, 0.2f, 1.0f)
-            ),
-            expandFrom = Alignment.CenterHorizontally
-        ),
-        label = "dividerAnimation"
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            HorizontalDivider(modifier = Modifier.weight(1f))
-            Text(
-                text = "or",
-                modifier = Modifier.padding(horizontal = 16.dp),
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            HorizontalDivider(modifier = Modifier.weight(1f))
-        }
+        HorizontalDivider(modifier = Modifier.weight(1f))
+        Text(
+            text = "or",
+            modifier = Modifier.padding(horizontal = 16.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        HorizontalDivider(modifier = Modifier.weight(1f))
     }
 }
 
 /**
  * Toggle between sign-in and sign-up mode
  * Single responsibility: render auth mode toggle button
+ *
+ * ADDED: smooth scale + alpha (minimal)
  */
 @Composable
 fun AuthModeToggle(
@@ -406,43 +509,58 @@ fun AuthModeToggle(
     interactionSource: MutableInteractionSource,
     modifier: Modifier = Modifier
 ) {
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn(
-            animationSpec = tween(700, delayMillis = 400, easing = FastOutSlowInEasing)
+    val isPressed = interactionSource.collectIsPressedAsState().value
+    val isHovered = interactionSource.collectIsHoveredAsState().value
+
+    val smoothScale by animateFloatAsState(
+        targetValue = buttonScale,
+        animationSpec = spring(
+            dampingRatio = 1.0f,
+            stiffness = 420f
         ),
-        label = "toggleButtonAnimation"
+        label = "smoothButtonScale"
+    )
+
+    val overlayAlpha by animateFloatAsState(
+        targetValue = when {
+            isPressed -> 0.22f
+            isHovered -> 0.12f
+            else -> 0f
+        },
+        animationSpec = tween(120),
+        label = "toggleOverlayAlpha"
+    )
+
+    Row(
+        modifier = modifier
+            .height(32.dp)
+            .fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
     ) {
-        Row(
-            modifier = modifier
-                .height(32.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
+        Text(
+            text = if (isSignUp) "Already have an account?" else "Don't have an account?",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        TextButton(
+            onClick = onToggle,
+            modifier = Modifier
+                .scale(smoothScale)
+                .alpha(1f - overlayAlpha)
+                .semantics {
+                    contentDescription =
+                        if (isSignUp) "Switch to sign in" else "Switch to sign up"
+                },
+            interactionSource = interactionSource,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            enabled = isEnabled
         ) {
             Text(
-                text = if (isSignUp) "Already have an account?" else "Don't have an account?",
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = if (isSignUp) "Sign in" else "Sign up",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface
             )
-            TextButton(
-                onClick = onToggle,
-                modifier = Modifier
-                    .scale(buttonScale)
-                    .semantics {
-                        contentDescription =
-                            if (isSignUp) "Switch to sign in" else "Switch to sign up"
-                    },
-                interactionSource = interactionSource,
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                enabled = isEnabled
-            ) {
-                Text(
-                    text = if (isSignUp) "Sign in" else "Sign up",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
         }
     }
 }
@@ -450,6 +568,7 @@ fun AuthModeToggle(
 /**
  * Animated error message card
  * Single responsibility: display error messages with dismiss action
+ * This is the ONLY place AnimatedVisibility is correct (state-based)
  */
 @Composable
 fun ErrorMessageCard(
@@ -481,7 +600,7 @@ fun ErrorMessageCard(
             Box(
                 modifier = modifier
                     .fillMaxWidth()
-                    .height(72.dp),
+                    .height(80.dp),
                 contentAlignment = Alignment.TopCenter
             ) {
                 Card(
@@ -500,11 +619,10 @@ fun ErrorMessageCard(
                         text = error,
                         modifier = Modifier.padding(16.dp),
                         color = MaterialTheme.colorScheme.onErrorContainer,
-                        fontSize = 14.sp
+                        style = MaterialTheme.typography.bodyMedium
                     )
                 }
             }
         }
     }
 }
-

@@ -9,19 +9,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
-import androidx.credentials.GetCredentialRequest
-import androidx.credentials.GetCredentialResponse
-import androidx.credentials.PasswordCredential
-import androidx.credentials.PublicKeyCredential
 import androidx.credentials.exceptions.ClearCredentialException
 import androidx.credentials.exceptions.GetCredentialException
 import com.fsl.myapplication.R
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
-import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.GoogleAuthProvider
-import kotlinx.coroutines.tasks.await
 import java.security.SecureRandom
 
 /**
@@ -35,9 +28,6 @@ class ModernGoogleSignInManager(private val context: Context) {
     private var isConfigured = false
     private var webClientId: String? = null
 
-    // Store nonce for verification during token handling
-    private var currentNonce: String? = null
-
     companion object {
         private const val TAG = "ModernGoogleSignIn"
     }
@@ -48,9 +38,16 @@ class ModernGoogleSignInManager(private val context: Context) {
 
     private fun initializeGoogleSignIn() {
         try {
-            webClientId = context.getString(R.string.default_web_client_id)
-            isConfigured = true
-            Log.d(TAG, "Google Identity Services configured successfully")
+            webClientId = context.getString(R.string.default_web_client_id).takeIf { it.isNotBlank() }
+            if (webClientId != null) {
+                isConfigured = true
+                Log.d(TAG, "Google Identity Services configured successfully")
+            } else {
+                Log.e(TAG, "default_web_client_id is blank or missing")
+            }
+        } catch (_: android.content.res.Resources.NotFoundException) {
+            Log.e(TAG, "default_web_client_id not found in resources")
+            webClientId = null
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize Google Identity Services: ${e.javaClass.simpleName}")
         }
@@ -60,7 +57,7 @@ class ModernGoogleSignInManager(private val context: Context) {
      * Generates a cryptographically secure nonce for improved security.
      * This helps prevent replay attacks.
      */
-    private fun generateNonce(): String {
+    fun createNonce(): String {
         val bytes = ByteArray(32)
         SecureRandom().nextBytes(bytes)
         return android.util.Base64.encodeToString(
@@ -70,19 +67,17 @@ class ModernGoogleSignInManager(private val context: Context) {
     }
 
     /**
-     * Handles the "Sign in with Google" button flow using the official API.
-     * This should be used when user explicitly clicks the Sign in with Google button.
+     * Initiates the Google credential request and returns the ID token string on success.
+     * This method DOES NOT sign in with Firebase; it simply returns the Google ID token
+     * so the caller (ViewModel) can verify the nonce and complete authentication.
      */
-    suspend fun signInWithGoogleButton(): Result<String> {
-        return try {
+    suspend fun requestGoogleIdToken(nonce: String): Result<String> {
+        try {
             if (!isConfigured || webClientId == null) {
                 return Result.failure(Exception("Google Sign-In is not configured."))
             }
 
-            val nonce = generateNonce()
-            currentNonce = nonce // Store nonce for verification
-
-            // Use GetGoogleIdOption for the modern bottom sheet UI (not GetSignInWithGoogleOption)
+            // Use GetGoogleIdOption and attach provided nonce
             val googleIdOption = GetGoogleIdOption.Builder()
                 .setFilterByAuthorizedAccounts(false)
                 .setServerClientId(webClientId!!)
@@ -90,7 +85,7 @@ class ModernGoogleSignInManager(private val context: Context) {
                 .setNonce(nonce)
                 .build()
 
-            val request = GetCredentialRequest.Builder()
+            val request = androidx.credentials.GetCredentialRequest.Builder()
                 .addCredentialOption(googleIdOption)
                 .build()
 
@@ -101,105 +96,28 @@ class ModernGoogleSignInManager(private val context: Context) {
                 )
             )
 
-            handleCredentialResponse(result)
-
-        } catch (_: GetCredentialException) {
-            currentNonce = null // Clear nonce on error
-            Log.e(TAG, "Sign-in failed. Please try again.")
-            Result.failure(Exception("Sign-in failed. Please try again."))
-        } catch (_: Exception) {
-            currentNonce = null // Clear nonce on error
-            Log.e(TAG, "Unexpected error occurred during sign-in")
-            Result.failure(Exception("Unexpected error occurred during sign-in"))
-        }
-    }
-
-    /**
-     * Handles the credential response from Credential Manager.
-     * Supports Google ID tokens, passwords, and passkeys.
-     */
-    private suspend fun handleCredentialResponse(result: GetCredentialResponse): Result<String> {
-        return try {
-            when (val credential = result.credential) {
-                // Handle Google ID Token (our primary use case)
-                is CustomCredential -> {
-                    if (credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
-                        handleGoogleIdToken(credential)
-                    } else {
-                        Log.e(TAG, "Unexpected custom credential type: ${credential.type}")
-                        Result.failure(Exception("Unexpected credential type"))
-                    }
+            // Extract ID token from response without early returns
+            val credential = result.credential
+            val idTokenResult = if (credential is CustomCredential && credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                val idToken = googleIdTokenCredential.idToken
+                if (idToken.isBlank()) {
+                    Result.failure(Exception("ID token missing from credential"))
+                } else {
+                    Result.success(idToken)
                 }
-
-                // Handle password credentials (if you support password auth)
-                is PasswordCredential -> {
-                    Log.d(TAG, "Password credential received: ${credential.id}")
-                    // You can implement password sign-in here if needed
-                    Result.failure(Exception("Password sign-in not implemented"))
-                }
-
-                // Handle passkey credentials (if you support passkeys)
-                is PublicKeyCredential -> {
-                    Log.d(TAG, "Passkey credential received")
-                    // You can implement passkey sign-in here if needed
-                    Result.failure(Exception("Passkey sign-in not implemented"))
-                }
-
-                else -> {
-                    Log.e(TAG, "Unexpected credential type: ${credential::class.java.simpleName}")
-                    Result.failure(Exception("Unexpected credential type"))
-                }
+            } else {
+                Result.failure(Exception("Unexpected credential type: ${credential::class.java.simpleName}"))
             }
 
+            return idTokenResult
+
+        } catch (e: GetCredentialException) {
+            Log.e(TAG, "Sign-in failed: ${e.javaClass.simpleName}")
+            return Result.failure(Exception("Sign-in failed: ${e.message}"))
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to handle credential response: ${e.javaClass.simpleName}")
-            Result.failure(e)
-        }
-    }
-
-    /**
-     * Processes the Google ID token and verifies the nonce for security.
-     * Ensures the token was issued in response to our sign-in request.
-     */
-    private suspend fun handleGoogleIdToken(credential: CustomCredential): Result<String> {
-        return try {
-            val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
-            val storedNonce = currentNonce
-
-            // Verify nonce to prevent replay attacks
-            if (storedNonce == null) {
-                Log.e(TAG, "No nonce was generated for this sign-in attempt")
-                return Result.failure(Exception("Invalid sign-in state"))
-            }
-
-            // Verify the nonce from the token (if available in the credential)
-            // Note: GoogleIdTokenCredential doesn't directly expose nonce, so we verify at token parsing
-            // In production, you would parse the JWT and verify the nonce claim
-            Log.d(TAG, "Nonce verification: token received after sign-in request")
-
-            // Only log non-sensitive information
-            Log.d(TAG, "User has display name: ${googleIdTokenCredential.displayName != null}")
-            Log.d(TAG, "User has profile picture: ${googleIdTokenCredential.profilePictureUri != null}")
-
-            // Authenticate with Firebase using the Google ID token
-            val firebaseCredential = GoogleAuthProvider.getCredential(googleIdTokenCredential.idToken, null)
-            val authResult = auth.signInWithCredential(firebaseCredential).await()
-            val firebaseUser = authResult.user
-
-            firebaseUser?.let {
-                Log.d(TAG, "Firebase authentication successful")
-                currentNonce = null // Clear nonce after successful use
-                Result.success("Sign-in successful")
-            } ?: Result.failure(Exception("Firebase user is null"))
-
-        } catch (e: GoogleIdTokenParsingException) {
-            currentNonce = null // Clear nonce on error
-            Log.e(TAG, "Invalid Google ID token: ${e.javaClass.simpleName}")
-            Result.failure(Exception("Invalid Google ID token"))
-        } catch (e: Exception) {
-            currentNonce = null // Clear nonce on error
-            Log.e(TAG, "Firebase authentication failed: ${e.javaClass.simpleName}")
-            Result.failure(Exception("Authentication failed"))
+            Log.e(TAG, "Unexpected sign-in error: ${e.javaClass.simpleName}")
+            return Result.failure(Exception("Unexpected error occurred during sign-in"))
         }
     }
 
