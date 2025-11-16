@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Button style with Inter font -->
+    <style name="InterButtonStyle" parent="android:Widget.Material.Button">
+        <item name="android:fontFamily">@font/inter</item>
+    </style>
+
+    <!-- EditText style with Inter font -->
+    <style name="InterEditTextStyle" parent="android:Widget.Material.EditText">
+        <item name="android:fontFamily">@font/inter</item>
+    </style>
+
+    <!-- General text appearance styles -->
+    <style name="InterTextAppearance" parent="android:TextAppearance">
+        <item name="android:fontFamily">@font/inter</item>
+    </style>
+
+    <style name="InterTextAppearance.Large" parent="InterTextAppearance">
+        <item name="android:textSize">22sp</item>
+    </style>
+
+    <style name="InterTextAppearance.Medium" parent="InterTextAppearance">
+        <item name="android:textSize">16sp</item>
+    </style>
+
+    <style name="InterTextAppearance.Small" parent="InterTextAppearance">
+        <item name="android:textSize">14sp</item>
+    </style>
+</resources>

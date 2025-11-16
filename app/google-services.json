@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "489465996591",
+    "project_id": "ssfsl-53c94",
+    "storage_bucket": "ssfsl-53c94.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:489465996591:android:27febe6d7d08a49599adda",
+        "android_client_info": {
+          "package_name": "com.fsl.myapplication"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "489465996591-p4ah689uvsjhtkufn3q1op5u9tlpildv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fsl.myapplication",
+            "certificate_hash": "8d8fc99e4b897779dcc7e1c8203020613242be95"
+          }
+        },
+        {
+          "client_id": "489465996591-sciraudcddfscea78hc429v4u6uhb8qn.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDBU_xuxxWv9LWrDfmrL7Cxjmj3GMmQT6I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "489465996591-sciraudcddfscea78hc429v4u6uhb8qn.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

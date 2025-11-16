@@ -1,0 +1,50 @@
+# Android / Kotlin / Gradle
+.gradle/
+/local.properties
+/.idea/
+*.iml
+/build/
+**/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+
+# Gradle
+.gradle
+/build
+
+# IntelliJ
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Mac
+.DS_Store
+
+# Logs
+*.log
+
+# Keystore
+**/*.jks
+
+# Archives
+*.zip
+*.jar
+
+# Kotlin/Java
+*.class
+*.kt~
+
+# Android Studio navigation
+.navigation/
+
+# Ignore generated files
+app/build/
+
+# Other
+.gradle/
+
+# Keep google-services.json committed for now per user request
+# (Remove from repo later and add to .gitignore when you rotate credentials)
+
